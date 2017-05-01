@@ -1,0 +1,252 @@
+<!doctype html> 
+<html lang="en"> 
+<head> 
+	<meta charset="UTF-8" />
+	<title>Phaser Game 2</title>
+    <script src="//cdn.jsdelivr.net/phaser/2.6.2/phaser.min.js"></script>
+    <style type="text/css">
+        body {
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+
+<script type="text/javascript">
+
+    // Global variables
+    var hex_num_x = 47;
+    var hex_num_y = 35;
+    var radius = 8; // Hexagonal radius in pixels
+    
+    var hexColourEmpty = '#ccddee';
+    var hexColourFill = '#7788ee';
+    
+    // Create Phaser game
+    var game = new Phaser.Game(800, 600, Phaser.AUTO, '', { preload: preload, create: create, update: update });
+
+    function preload() {
+
+    }
+
+
+    var hexGroup, buttonGroup; // Groups to hold hex array and control buttons
+    
+    var playButton, resetButton, speedUpButton, speedDownButton, playText;
+    
+    
+    var paused = true;
+
+    
+
+    var imageArray, imageArrayNew;
+
+    var spriteArray;
+    var bmdHex, bmdHexFill;
+
+    function create() {
+
+        game.stage.backgroundColor = '#333333';
+        
+        // Initialise object groups
+        hexGroup = game.add.group();
+        hexGroup.x = 20;
+        hexGroup.y = 20;
+        buttonGroup = game.add.group();
+        buttonGroup.x = 20;
+        buttonGroup.y = 540;
+        
+        // Initialise hex bitmaps
+        bmdHex = game.make.bitmapData(radius*2,radius*2);
+        bmdHex.circle(radius,radius,radius,hexColourEmpty);
+        bmdHexFill = game.make.bitmapData(radius*2,radius*2);
+        bmdHexFill.circle(radius,radius,radius,hexColourFill);
+
+        // Initialise hex array and create sprites (buttons used to capture click events)
+        spriteArray = new Array(hex_num_x);
+        for(var x = 0; x < hex_num_x; x++) {
+            spriteArray[x] = new Array(hex_num_y);
+            for(var y = 0; y < hex_num_y; y++) {
+                var sx = 2*radius*x + (y%2 == 0 ? radius : 0);
+                var sy = 2*0.866*radius*y
+                spriteArray[x][y] = game.add.button(sx, sy, bmdHex, hexClick, this);
+                spriteArray[x][y].grid_x = x;
+                spriteArray[x][y].grid_y = y;
+                hexGroup.add(spriteArray[x][y]);
+            }
+        }
+
+
+        resetGrid();
+
+        // Create button bitmap
+        var bmd_button = game.make.bitmapData(128, 32);
+        bmd_button.rect(0, 0, 128, 32, '#eeeeee'); // border
+        bmd_button.rect(4, 4, 120, 24, '#666666'); // fill
+        playButton = game.add.button(10,10,bmd_button,function() { buttonPress(1); } );
+        resetButton = game.add.button(10 + playButton.width + 10,10,bmd_button,function() { buttonPress(2); } );
+        buttonGroup.add(playButton);
+        buttonGroup.add(resetButton);
+        
+        var textStyle = {font: '24px Arial', fill: '#eeeeee', align: "center", boundsAlignH: "center", boundsAlignV: "center"};
+        
+        playText = game.add.text(10,10,"PLAY", textStyle);
+        playText.setTextBounds(0,2,128,32);
+        buttonGroup.add(playText);
+
+        resetText = game.add.text(Math.round(resetButton.x),10,"RESET",textStyle);
+        resetText.setTextBounds(0,2,128,32);
+        buttonGroup.add(resetText);
+        
+        updateGrid();
+        game.time.events.loop(100, updateState, this);
+    }
+
+    function update() {}
+
+    // Starts with initial
+    function resetGrid() {
+        imageArray = new Array(hex_num_x);
+        imageArrayNew = new Array(hex_num_x);
+        for(var i = 0; i < hex_num_x; i++) {
+            imageArray[i] = new Array(hex_num_y);
+            imageArrayNew[i] = new Array(hex_num_y);
+            imageArray[i].fill(false);
+            imageArrayNew[i].fill(false);
+        }
+
+        imageArray[Math.floor(hex_num_x/2)-1][Math.floor(hex_num_y/2)-1] = true;
+        imageArray[Math.floor(hex_num_x/2)][Math.floor(hex_num_y/2)-1] = true;
+        imageArray[Math.floor(hex_num_x/2)-1][Math.floor(hex_num_y/2)] = true;
+        imageArray[Math.floor(hex_num_x/2)+1][Math.floor(hex_num_y/2)] = true;
+        imageArray[Math.floor(hex_num_x/2)-1][Math.floor(hex_num_y/2)+1] = true;
+        imageArray[Math.floor(hex_num_x/2)][Math.floor(hex_num_y/2)+1] = true;
+    }
+
+    // Performs an iteration over the current grid
+    function updateState() {
+
+        if(paused) { return; }
+
+        // Calculate next grid state
+        for(var y = 1; y < hex_num_y-1; y++) {
+            for(var x = 1; x < hex_num_x-1; x++) {
+                var neighbours = [];
+                neighbours.push(imageArray[x][y-1]);
+                neighbours.push(imageArray[x-1][y]);
+                neighbours.push(imageArray[x+1][y]);
+                neighbours.push(imageArray[x][y+1]);
+                if(y%2 == 0) {
+                    neighbours.push(imageArray[x+1][y-1]);
+                    neighbours.push(imageArray[x+1][y+1]);
+                } else {
+                    neighbours.push(imageArray[x-1][y-1]);
+                    neighbours.push(imageArray[x-1][y+1]);
+                }
+
+                var sum = 0;
+                for(var n = 0; n < neighbours.length; n++) {
+                    if(neighbours[n]) { sum++; }
+                }
+
+                if(imageArray[x][y]) {
+                    if(sum <= 1 || sum >= 4) {
+                        // Hex dies
+                        imageArrayNew[x][y] = false;
+                    } else {
+                        // Hex stays alive
+                        imageArrayNew[x][y] = true;
+                    }
+                } else {
+                    if(sum == 3) {
+                        // Hex comes alive
+                        imageArrayNew[x][y] = true;
+                    } else {
+                        // Hex stays dead
+                        imageArrayNew[x][y] = false;
+                    }
+                }
+            }
+        }
+
+        // Set new grid as current
+        var temp = imageArray;
+        imageArray = imageArrayNew;
+        imageArrayNew = temp;
+
+        updateGrid();
+
+    }
+
+    function updateGrid() {
+
+        for(var y = 0; y < hex_num_y; y++) {
+            for(var x = 0; x < hex_num_x; x++) {
+                updateHex(x,y);
+            }
+        } 
+
+    }
+
+    function updateHex(x, y) {
+        spriteArray[x][y].loadTexture(imageArray[x][y] ? bmdHexFill : bmdHex);
+    }
+
+    function hexClick(hex, pointer) {
+        var x = hex.grid_x;
+        var y = hex.grid_y;
+        console.log("Hex clicked! [" + x + "," + y + "]");
+        imageArray[x][y] = !imageArray[x][y];
+        updateHex(x,y);
+
+    }
+
+    function imageClick(image, pointer) {
+        if(game.input.activePointer.isDown) { // Because event fires on mouse up as well for some reason
+            console.log("Image clicked!");
+            var imageX = Math.floor((pointer.x - 100) / 16);
+            var imageY = Math.floor((pointer.y - 20) / 16);
+            console.log("X: " + pointer.x + ", Y: " + pointer.y);
+            console.log("imageX: " + imageX + ", imageY: " + imageY);
+
+            imageArray[imageX][imageY] = true;
+
+        }
+    }
+
+    function buttonPress(number) {
+        console.log("Button " + number + " pressed!");
+
+        switch(number)
+        {
+            case 1:
+                playText.text = paused ? "PAUSE" : "PLAY";
+                paused = !paused;
+                
+                break;
+            case 2:
+                resetGrid();
+                break;
+        }
+
+    }
+
+    function applyPerPixel(bmd, func) {
+        for(var y = 0; y < bmd.height; y++) {
+            for(var x = 0; x < bmd.width; x++) {
+                var pc = func(x,y);
+                bmd.setPixel(x,y,pc.r,pc.g,pc.b);
+            }
+        }
+    }
+
+    function getRandomInt(min, max) {
+        min = Math.ceil(min);
+        max = Math.floor(max);
+        return Math.floor(Math.random() * (max - min)) + min;
+    }
+
+</script>
+
+</body>
+</html>
