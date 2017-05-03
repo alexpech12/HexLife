@@ -24,19 +24,20 @@
     
     
     var speedMap = [
-        { tickRate: 2000, displaySpeed: "25%" },
-        { tickRate: 1000, displaySpeed: "50%" },
-        { tickRate: 500, displaySpeed: "100%" },
-        { tickRate: 100, displaySpeed: "500%" },
-        { tickRate: 50, displaySpeed: "1000%" },
-        { tickRate: 10, displaySpeed: "10000%"}
+        { tickRate: 2000, displaySpeed: "0.25x" },
+        { tickRate: 1000, displaySpeed: "0.5x"  },
+        { tickRate: 500,  displaySpeed: "1x"    },
+        { tickRate: 250,  displaySpeed: "2x"    },
+        { tickRate: 100,  displaySpeed: "5x"    },
+        { tickRate: 50,   displaySpeed: "10x"   },
+        { tickRate: 10,   displaySpeed: "100x"  }
     ];
     var speedSelection = 2;
     
     var hexGroup, buttonGroup; // Groups to hold hex array and control buttons
     
     // Button objects requiring global access
-    var playButton, resetButton, speedUpButton, speedDownButton, playText, speedText;
+    var playButton, resetButton, randomButton, speedUpButton, speedDownButton, playText, speedText;
     
     // Game state variables
     var paused = true;
@@ -86,7 +87,9 @@
             for(var y = 0; y < hex_num_y; y++) {
                 var sx = 2*radius*x + (y%2 == 0 ? radius : 0);
                 var sy = 2*0.866*radius*y
-                spriteArray[x][y] = game.add.button(sx, sy, bmdHex, hexClick, this);
+                var isEdge = x==0 || y==0 || x==hex_num_x-1 || y==hex_num_y-1;
+                // Don't want to allow clicks on the edge of the grid, so disable function on edges
+                spriteArray[x][y] = game.add.button(sx, sy, bmdHex, isEdge ? function() { return; } : hexClick, this);
                 spriteArray[x][y].grid_x = x;
                 spriteArray[x][y].grid_y = y;
                 hexGroup.add(spriteArray[x][y]);
@@ -94,19 +97,26 @@
         }
 
 
+        initGrid();
         resetGrid();
 
         // Create button bitmaps
         var bmd_button = game.make.bitmapData(128, 32);
         bmd_button.rect(0, 0, 128, 32, '#eeeeee'); // border
         bmd_button.rect(4, 4, 120, 24, '#666666'); // fill
+        var bmd_button_small = game.make.bitmapData(64,32);
+        bmd_button_small.rect(0, 0, 64, 32, '#eeeeee'); // border
+        bmd_button_small.rect(4, 4, 56, 24, '#666666'); // fill
+        
         // Create button objects
         playButton = game.add.button(10,10,bmd_button,buttonPlay);
         resetButton = game.add.button(playButton.right + 10,10,bmd_button,buttonReset);
-        speedDownButton  = game.add.button(resetButton.right + 90, 10,bmd_button,buttonSpeedDown);
-        speedUpButton = game.add.button(speedDownButton.right + 130,10,bmd_button,buttonSpeedUp);
+        randomButton = game.add.button(resetButton.right + 10,10,bmd_button,buttonRandom);
+        speedDownButton  = game.add.button(randomButton.right + 70, 10,bmd_button_small,buttonSpeedDown);
+        speedUpButton = game.add.button(speedDownButton.right + 130,10,bmd_button_small,buttonSpeedUp);
         buttonGroup.add(playButton);
         buttonGroup.add(resetButton);
+        buttonGroup.add(randomButton);
         buttonGroup.add(speedDownButton);
         buttonGroup.add(speedUpButton);
         
@@ -121,15 +131,19 @@
         resetText.setTextBounds(0,2,128,32);
         buttonGroup.add(resetText);
         
-        var speedDownText = game.add.text(Math.round(speedDownButton.x),10,"SLOWER",textStyle);
-        speedDownText.setTextBounds(0,2,128,32);
+        var randomText = game.add.text(Math.round(randomButton.x),10,"RANDOM",textStyle);
+        randomText.setTextBounds(0,2,128,32);
+        buttonGroup.add(randomText);
+        
+        var speedDownText = game.add.text(Math.round(speedDownButton.x),10,"<<<",textStyle);
+        speedDownText.setTextBounds(0,2,64,32);
         buttonGroup.add(speedDownText);
         
-        var speedUpText = game.add.text(Math.round(speedUpButton.x),10,"FASTER",textStyle);
-        speedUpText.setTextBounds(0,2,128,32);
+        var speedUpText = game.add.text(Math.round(speedUpButton.x),10,">>>",textStyle);
+        speedUpText.setTextBounds(0,2,64,32);
         buttonGroup.add(speedUpText);
         
-        speedText = game.add.text(speedDownButton.right + 5,10,"100%",textStyle);
+        speedText = game.add.text(speedDownButton.right + 5,10,speedMap[speedSelection].displaySpeed,textStyle);
         speedText.setTextBounds(0,2,128,32);
         buttonGroup.add(speedText);
         
@@ -139,8 +153,8 @@
 
     function update() {} // Built-in update function not used. Game update uses variable rate triggered by timer events.
 
-    // Resets grid to default state
-    function resetGrid() {
+    // Initialises array objects to hold state of grid
+    function initGrid() {
         stateArray = new Array(hex_num_x);
         stateArrayNew = new Array(hex_num_x);
         for(var i = 0; i < hex_num_x; i++) {
@@ -149,6 +163,13 @@
             stateArray[i].fill(false);
             stateArrayNew[i].fill(false);
         }
+    }
+    
+    // Resets grid to default state
+    function resetGrid() {
+        for(var i = 0; i < hex_num_x; i++) {
+            stateArray[i].fill(false);
+        }
 
         stateArray[Math.floor(hex_num_x/2)-1][Math.floor(hex_num_y/2)-1] = true;
         stateArray[Math.floor(hex_num_x/2)][Math.floor(hex_num_y/2)-1] = true;
@@ -156,8 +177,20 @@
         stateArray[Math.floor(hex_num_x/2)+1][Math.floor(hex_num_y/2)] = true;
         stateArray[Math.floor(hex_num_x/2)-1][Math.floor(hex_num_y/2)+1] = true;
         stateArray[Math.floor(hex_num_x/2)][Math.floor(hex_num_y/2)+1] = true;
+        
+        updateGrid();
     }
 
+    function resetRandom() {
+        for(var x = 1; x < hex_num_x-1; x++) {
+            for(var y = 1; y < hex_num_y-1; y++) {
+                stateArray[x][y] = Math.random() > 0.5 ? true : false;
+            }
+        }
+        
+        updateGrid();
+    }
+    
     // Performs an iteration over the current grid and updates state
     function updateState() {
 
@@ -187,18 +220,18 @@
 
                     if(stateArray[x][y]) {
                         if(sum <= 1 || sum >= 4) {
-                            // Hex dies
+                            // Cell dies
                             stateArrayNew[x][y] = false;
                         } else {
-                            // Hex stays alive
+                            // Cell stays alive
                             stateArrayNew[x][y] = true;
                         }
                     } else {
                         if(sum == 3) {
-                            // Hex comes alive
+                            // Cell comes to life
                             stateArrayNew[x][y] = true;
                         } else {
-                            // Hex stays dead
+                            // Cell stays dead
                             stateArrayNew[x][y] = false;
                         }
                     }
@@ -254,6 +287,10 @@
     
     function buttonReset() {
         resetGrid();
+    }
+    
+    function buttonRandom() {
+        resetRandom();
     }
     
     function buttonSpeedUp() {
