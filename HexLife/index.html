@@ -2,7 +2,7 @@
 <html lang="en"> 
 <head> 
 	<meta charset="UTF-8" />
-	<title>Phaser Game 2</title>
+	<title>HexLife by rednax</title>
     <script src="//cdn.jsdelivr.net/phaser/2.6.2/phaser.min.js"></script>
     <style type="text/css">
         body {
@@ -22,36 +22,53 @@
     var hexColourEmpty = '#ccddee';
     var hexColourFill = '#7788ee';
     
-    // Create Phaser game
-    var game = new Phaser.Game(800, 600, Phaser.AUTO, '', { preload: preload, create: create, update: update });
-
-    function preload() {
-
-    }
-
-
+    
+    var speedMap = [
+        { tickRate: 2000, displaySpeed: "25%" },
+        { tickRate: 1000, displaySpeed: "50%" },
+        { tickRate: 500, displaySpeed: "100%" },
+        { tickRate: 100, displaySpeed: "500%" },
+        { tickRate: 50, displaySpeed: "1000%" },
+        { tickRate: 10, displaySpeed: "10000%"}
+    ];
+    var speedSelection = 2;
+    
     var hexGroup, buttonGroup; // Groups to hold hex array and control buttons
     
-    var playButton, resetButton, speedUpButton, speedDownButton, playText;
+    // Button objects requiring global access
+    var playButton, resetButton, speedUpButton, speedDownButton, playText, speedText;
     
-    
+    // Game state variables
     var paused = true;
+    var stateArray, stateArrayNew; // Arrays to hold current and next state of grid (boolean values)
+    
+    var spriteArray; // 2D array of hex objects
+    var bmdHex, bmdHexFill; // Hex tile bitmaps
 
     
-
-    var imageArray, imageArrayNew;
-
-    var spriteArray;
-    var bmdHex, bmdHexFill;
-
+    // Create Phaser game
+    var game = new Phaser.Game(800, 600, Phaser.AUTO, '', { preload: preload, create: create, update: update });
+    
+    function preload() {} // No images to preload. All graphics generated within script.
+    
     function create() {
 
         game.stage.backgroundColor = '#333333';
         
+        var titleText = game.add.text(0,0,"HexLife",{
+            font: '32px Arial', 
+            fontStyle: 'italic', 
+            fill: '#cbcbe8', 
+            align: "center", 
+            boundsAlignH: "center", 
+            boundsAlignV: "center"
+        });
+        titleText.setTextBounds(0,0,game.width,40);
+        
         // Initialise object groups
         hexGroup = game.add.group();
         hexGroup.x = 20;
-        hexGroup.y = 20;
+        hexGroup.y = 40;
         buttonGroup = game.add.group();
         buttonGroup.x = 20;
         buttonGroup.y = 540;
@@ -79,107 +96,129 @@
 
         resetGrid();
 
-        // Create button bitmap
+        // Create button bitmaps
         var bmd_button = game.make.bitmapData(128, 32);
         bmd_button.rect(0, 0, 128, 32, '#eeeeee'); // border
         bmd_button.rect(4, 4, 120, 24, '#666666'); // fill
-        playButton = game.add.button(10,10,bmd_button,function() { buttonPress(1); } );
-        resetButton = game.add.button(10 + playButton.width + 10,10,bmd_button,function() { buttonPress(2); } );
+        // Create button objects
+        playButton = game.add.button(10,10,bmd_button,buttonPlay);
+        resetButton = game.add.button(playButton.right + 10,10,bmd_button,buttonReset);
+        speedDownButton  = game.add.button(resetButton.right + 90, 10,bmd_button,buttonSpeedDown);
+        speedUpButton = game.add.button(speedDownButton.right + 130,10,bmd_button,buttonSpeedUp);
         buttonGroup.add(playButton);
         buttonGroup.add(resetButton);
+        buttonGroup.add(speedDownButton);
+        buttonGroup.add(speedUpButton);
         
+        // Add text to buttons
         var textStyle = {font: '24px Arial', fill: '#eeeeee', align: "center", boundsAlignH: "center", boundsAlignV: "center"};
         
         playText = game.add.text(10,10,"PLAY", textStyle);
         playText.setTextBounds(0,2,128,32);
         buttonGroup.add(playText);
 
-        resetText = game.add.text(Math.round(resetButton.x),10,"RESET",textStyle);
+        var resetText = game.add.text(Math.round(resetButton.x),10,"RESET",textStyle);
         resetText.setTextBounds(0,2,128,32);
         buttonGroup.add(resetText);
         
+        var speedDownText = game.add.text(Math.round(speedDownButton.x),10,"SLOWER",textStyle);
+        speedDownText.setTextBounds(0,2,128,32);
+        buttonGroup.add(speedDownText);
+        
+        var speedUpText = game.add.text(Math.round(speedUpButton.x),10,"FASTER",textStyle);
+        speedUpText.setTextBounds(0,2,128,32);
+        buttonGroup.add(speedUpText);
+        
+        speedText = game.add.text(speedDownButton.right + 5,10,"100%",textStyle);
+        speedText.setTextBounds(0,2,128,32);
+        buttonGroup.add(speedText);
+        
         updateGrid();
-        game.time.events.loop(100, updateState, this);
+        refreshUpdate();
     }
 
-    function update() {}
+    function update() {} // Built-in update function not used. Game update uses variable rate triggered by timer events.
 
-    // Starts with initial
+    // Resets grid to default state
     function resetGrid() {
-        imageArray = new Array(hex_num_x);
-        imageArrayNew = new Array(hex_num_x);
+        stateArray = new Array(hex_num_x);
+        stateArrayNew = new Array(hex_num_x);
         for(var i = 0; i < hex_num_x; i++) {
-            imageArray[i] = new Array(hex_num_y);
-            imageArrayNew[i] = new Array(hex_num_y);
-            imageArray[i].fill(false);
-            imageArrayNew[i].fill(false);
+            stateArray[i] = new Array(hex_num_y);
+            stateArrayNew[i] = new Array(hex_num_y);
+            stateArray[i].fill(false);
+            stateArrayNew[i].fill(false);
         }
 
-        imageArray[Math.floor(hex_num_x/2)-1][Math.floor(hex_num_y/2)-1] = true;
-        imageArray[Math.floor(hex_num_x/2)][Math.floor(hex_num_y/2)-1] = true;
-        imageArray[Math.floor(hex_num_x/2)-1][Math.floor(hex_num_y/2)] = true;
-        imageArray[Math.floor(hex_num_x/2)+1][Math.floor(hex_num_y/2)] = true;
-        imageArray[Math.floor(hex_num_x/2)-1][Math.floor(hex_num_y/2)+1] = true;
-        imageArray[Math.floor(hex_num_x/2)][Math.floor(hex_num_y/2)+1] = true;
+        stateArray[Math.floor(hex_num_x/2)-1][Math.floor(hex_num_y/2)-1] = true;
+        stateArray[Math.floor(hex_num_x/2)][Math.floor(hex_num_y/2)-1] = true;
+        stateArray[Math.floor(hex_num_x/2)-1][Math.floor(hex_num_y/2)] = true;
+        stateArray[Math.floor(hex_num_x/2)+1][Math.floor(hex_num_y/2)] = true;
+        stateArray[Math.floor(hex_num_x/2)-1][Math.floor(hex_num_y/2)+1] = true;
+        stateArray[Math.floor(hex_num_x/2)][Math.floor(hex_num_y/2)+1] = true;
     }
 
-    // Performs an iteration over the current grid
+    // Performs an iteration over the current grid and updates state
     function updateState() {
 
-        if(paused) { return; }
+        if(!paused) 
+        {
 
-        // Calculate next grid state
-        for(var y = 1; y < hex_num_y-1; y++) {
-            for(var x = 1; x < hex_num_x-1; x++) {
-                var neighbours = [];
-                neighbours.push(imageArray[x][y-1]);
-                neighbours.push(imageArray[x-1][y]);
-                neighbours.push(imageArray[x+1][y]);
-                neighbours.push(imageArray[x][y+1]);
-                if(y%2 == 0) {
-                    neighbours.push(imageArray[x+1][y-1]);
-                    neighbours.push(imageArray[x+1][y+1]);
-                } else {
-                    neighbours.push(imageArray[x-1][y-1]);
-                    neighbours.push(imageArray[x-1][y+1]);
-                }
-
-                var sum = 0;
-                for(var n = 0; n < neighbours.length; n++) {
-                    if(neighbours[n]) { sum++; }
-                }
-
-                if(imageArray[x][y]) {
-                    if(sum <= 1 || sum >= 4) {
-                        // Hex dies
-                        imageArrayNew[x][y] = false;
+            // Calculate next grid state
+            for(var y = 1; y < hex_num_y-1; y++) {
+                for(var x = 1; x < hex_num_x-1; x++) {
+                    var neighbours = [];
+                    neighbours.push(stateArray[x][y-1]);
+                    neighbours.push(stateArray[x-1][y]);
+                    neighbours.push(stateArray[x+1][y]);
+                    neighbours.push(stateArray[x][y+1]);
+                    if(y%2 == 0) {
+                        neighbours.push(stateArray[x+1][y-1]);
+                        neighbours.push(stateArray[x+1][y+1]);
                     } else {
-                        // Hex stays alive
-                        imageArrayNew[x][y] = true;
+                        neighbours.push(stateArray[x-1][y-1]);
+                        neighbours.push(stateArray[x-1][y+1]);
                     }
-                } else {
-                    if(sum == 3) {
-                        // Hex comes alive
-                        imageArrayNew[x][y] = true;
+
+                    var sum = 0;
+                    for(var n = 0; n < neighbours.length; n++) {
+                        if(neighbours[n]) { sum++; }
+                    }
+
+                    if(stateArray[x][y]) {
+                        if(sum <= 1 || sum >= 4) {
+                            // Hex dies
+                            stateArrayNew[x][y] = false;
+                        } else {
+                            // Hex stays alive
+                            stateArrayNew[x][y] = true;
+                        }
                     } else {
-                        // Hex stays dead
-                        imageArrayNew[x][y] = false;
+                        if(sum == 3) {
+                            // Hex comes alive
+                            stateArrayNew[x][y] = true;
+                        } else {
+                            // Hex stays dead
+                            stateArrayNew[x][y] = false;
+                        }
                     }
                 }
             }
+
+            // Set new grid as current
+            var temp = stateArray;
+            stateArray = stateArrayNew;
+            stateArrayNew = temp;
+
+            updateGrid();
         }
-
-        // Set new grid as current
-        var temp = imageArray;
-        imageArray = imageArrayNew;
-        imageArrayNew = temp;
-
-        updateGrid();
-
+        
+        // Reset timer
+        refreshUpdate();
     }
 
+    // Update textures over hex grid
     function updateGrid() {
-
         for(var y = 0; y < hex_num_y; y++) {
             for(var x = 0; x < hex_num_x; x++) {
                 updateHex(x,y);
@@ -188,62 +227,47 @@
 
     }
 
+    // Update texture for a hex based on its current state
     function updateHex(x, y) {
-        spriteArray[x][y].loadTexture(imageArray[x][y] ? bmdHexFill : bmdHex);
+        spriteArray[x][y].loadTexture(stateArray[x][y] ? bmdHexFill : bmdHex);
     }
 
+    // Set event time for updateState function
+    function refreshUpdate() {
+        game.time.events.add(speedMap[speedSelection].tickRate, updateState, this);
+    }
+    
+    // When hex clicked, toggle its state
     function hexClick(hex, pointer) {
         var x = hex.grid_x;
         var y = hex.grid_y;
-        console.log("Hex clicked! [" + x + "," + y + "]");
-        imageArray[x][y] = !imageArray[x][y];
+        stateArray[x][y] = !stateArray[x][y];
         updateHex(x,y);
-
     }
-
-    function imageClick(image, pointer) {
-        if(game.input.activePointer.isDown) { // Because event fires on mouse up as well for some reason
-            console.log("Image clicked!");
-            var imageX = Math.floor((pointer.x - 100) / 16);
-            var imageY = Math.floor((pointer.y - 20) / 16);
-            console.log("X: " + pointer.x + ", Y: " + pointer.y);
-            console.log("imageX: " + imageX + ", imageY: " + imageY);
-
-            imageArray[imageX][imageY] = true;
-
+    
+    
+    // Button event functions
+    function buttonPlay() {
+        playText.text = paused ? "PAUSE" : "PLAY";
+        paused = !paused;
+    }
+    
+    function buttonReset() {
+        resetGrid();
+    }
+    
+    function buttonSpeedUp() {
+        if(speedSelection < speedMap.length-1) {
+            speedSelection++;
+            speedText.text = speedMap[speedSelection].displaySpeed;
         }
     }
-
-    function buttonPress(number) {
-        console.log("Button " + number + " pressed!");
-
-        switch(number)
-        {
-            case 1:
-                playText.text = paused ? "PAUSE" : "PLAY";
-                paused = !paused;
-                
-                break;
-            case 2:
-                resetGrid();
-                break;
+    
+    function buttonSpeedDown() {
+        if(speedSelection > 0) {
+            speedSelection--;
+            speedText.text = speedMap[speedSelection].displaySpeed;
         }
-
-    }
-
-    function applyPerPixel(bmd, func) {
-        for(var y = 0; y < bmd.height; y++) {
-            for(var x = 0; x < bmd.width; x++) {
-                var pc = func(x,y);
-                bmd.setPixel(x,y,pc.r,pc.g,pc.b);
-            }
-        }
-    }
-
-    function getRandomInt(min, max) {
-        min = Math.ceil(min);
-        max = Math.floor(max);
-        return Math.floor(Math.random() * (max - min)) + min;
     }
 
 </script>
